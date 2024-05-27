@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+    <div>
+        <div>
+            chats
+            <div>
+                <input type="text" id="user-name">
+                <button id="set-name-button"> set name</button>
+            </div>
+            <div>
+                <input type="text" id="add-chat-input">
+                <input type="text" id="add-chat-name-input">
+                <button id="add-chat-button">add chat</button>
+            </div>
+        </div>
+        <div style="display: flex;">
+            <div style="flex-basis: 30%;" id="users-div">
+                users
+            </div>
+            <div style="flex-basis: 70%;">
+                convo
+                <div id="convo-div"></div>
+                <input type="text" id="convo-input">
+                <button id="convo-send-button">send</button>
+            </div>
+        </div>
+    </div>
+    <script>
+        let ws = new WebSocket('ws://localhost:9090');
+
+        let client = {
+            clientId:undefined,
+            chats:[],
+            contacts:new Map()
+        };
+
+        let selectedChatId;
+
+        const setNameButton = document.getElementById('set-name-button');
+        const usersDiv = document.getElementById('users-div');
+        const convoDiv = document.getElementById('convo-div');
+
+        const convoInput = document.getElementById('convo-input');
+        const convoSendButton = document.getElementById('convo-send-button');
+
+        const addChatinput = document.getElementById('add-chat-input');
+        const addChatNameInput = document.getElementById('add-chat-name-input');
+        const addChatButton = document.getElementById('add-chat-button');
+
+        convoSendButton.addEventListener('click', () => {
+            const message = convoInput.value;
+
+            const payload = {
+                method:'send',
+                clientId:client.clientId,
+                chatId:selectedChatId,
+                message:message
+            };
+            ws.send(JSON.stringify(payload));
+        });
+
+        addChatButton.addEventListener('click', () => {
+            const addedClientId = addChatinput.value;
+            const addedClientName = addChatNameInput.value;
+
+            addChatinput.value = '';
+            addChatNameInput.value = '';
+
+            const payload = {
+                method:'create_chat',
+                clientId:client.clientId,
+                addedClientId:addedClientId,
+                addedClientName:addedClientName
+            };
+
+            ws.send(JSON.stringify(payload));
+        });
+
+        ws.onmessage = messeage => {
+            const respones = JSON.parse(messeage.data);
+            console.log(respones);
+
+            if(respones.method === 'connect'){
+                client.clientId = respones.clientId;
+            };
+
+            if(respones.method === 'create_chat'){
+                client.chats = respones.chats;
+
+                client.contacts.set(respones.newContactKey, respones.newContactValue);
+
+                loopChats();
+            };
+
+            if (respones.method === 'update'){
+                if (selectedChatId === respones.chatId){
+                    const messageDiv = document.createElement('div');
+                    messageDiv.id = respones.chatId + respones.message.id;
+                    const messageSenderP = document.createElement('p');
+                    const messageTxtP = document.createElement('p');
+
+                    messageSenderP.innerText = respones.message.sender === client.clientId ? 'you' : client.contacts.get(respones.message.sender) ? client.contacts.get(respones.message.sender) : respones.message.sender;
+                    messageTxtP.innerText = respones.message.content;
+
+                    messageDiv.appendChild(messageSenderP);
+                    messageDiv.appendChild(messageTxtP);
+                    convoDiv.appendChild(messageDiv);
+                }
+                else{
+                    console.log('geeeeeeeeeeeerere')
+                    alert(`sender:${client.contacts.get(respones.message.sender) ? client.contacts.get(respones.message.sender): respones.message.sender}, message:${respones.message.content}`);
+                };
+            };
+
+            if (respones.method === 'accept_chat'){
+                client.contacts.set(respones.newContactKey, respones.newContactValue);
+
+                loopChats();
+            };
+
+            if (respones.method === 'refresh_chat'){
+                client.chats.set(respones.chat.chatId, respones.chat.chat);
+                selectedChatId = respones.chat.chatId;
+
+                while(convoDiv.firstChild){
+                    convoDiv.removeChild(convoDiv.firstChild);
+                };
+                console.log(respones.chat);
+                respones.chat.messages.forEach(message => {
+                    const messageDiv = document.createElement('div');
+                    messageDiv.id = respones.chat.chatId + message.id;
+                    const messageSenderP = document.createElement('p');
+                    const messageTxtP = document.createElement('p');
+
+                    messageSenderP.innerText = message.sender === client.clientId ? 'you' : client.contacts.get(message.sender) ? client.contacts.get(message.sender) : message.sender;
+                    messageTxtP.innerText = message.content;
+
+                    messageDiv.appendChild(messageSenderP);
+                    messageDiv.appendChild(messageTxtP);
+                    convoDiv.appendChild(messageDiv);
+                });
+            };
+
+        };
+
+        function loopChats(){
+            while(usersDiv.firstChild){
+                    usersDiv.removeChild(usersDiv.firstChild);
+                };
+
+                client.chats.forEach(chat => {
+                    const chatButton = document.createElement('button');
+                    chatButton.id = chat.chatId;
+                    const chatClientId = chat.chat.client_1 === client.clientId ? chat.chat.client_2 : chat.chat.client_1;
+                    const chatClient = client.contacts.get(chatClientId);
+                    chatButton.innerText = chatClient ? chatClient : chat.chat.client_1 === client.clientId ? chat.chat.client_2 : chat.chat.client_1;
+
+                    console.log(client.contacts)
+                    console.log(chatClient)
+                    if(!chatClient){
+                        const addButton = document.createElement('button');
+                        addButton.id = 'add' + chatClientId;
+                        addButton.innerText = 'add';
+
+                        addButton.addEventListener('click', () => {
+                            const payload = {
+                                method:'accept_chat',
+                                clientId:client.clientId,
+                                chatId:chat.id,
+                                contactId:chatClientId,
+                                contactName:addChatinput.value
+                            };
+
+                            ws.send(JSON.stringify(payload));
+                        });
+
+                        usersDiv.appendChild(addButton);
+                        return;
+                    };
+
+                    chatButton.addEventListener('click', () => {
+                        const payload = {
+                            method:'refresh_chat',
+                            clientId:client.clientId,
+                            chatId:chat.id
+                        };
+
+                        ws.send(JSON.stringify(payload));
+
+                        //was heere
+                    });
+
+                    usersDiv.appendChild(chatButton);
+                });
+        };
+    </script>
+</body>
+</html>
